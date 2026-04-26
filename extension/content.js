@@ -229,18 +229,38 @@
   let sphereAnimId = null;
   let sphereVisible = false;
 
+  // ── Context validity check ───────────────────────────────────────────────────
+  // When the extension is reloaded/updated, chrome.runtime.id becomes undefined.
+  // Any subsequent chrome API call throws "Extension context invalidated".
+  // We check this before every API call and tear down the overlay when it happens.
+
+  function isContextValid() {
+    try { return !!chrome.runtime?.id; } catch (_) { return false; }
+  }
+
+  function teardown() {
+    try { host.remove(); } catch (_) {}
+    if (sphereAnimId) cancelAnimationFrame(sphereAnimId);
+  }
+
   // ── Port to background ───────────────────────────────────────────────────────
 
   let port;
 
   function connectPort() {
-    port = chrome.runtime.connect({ name: 'focuslens' });
-    port.onMessage.addListener(onMessage);
-    port.onDisconnect.addListener(() => {
-      setTimeout(connectPort, 2000);
-    });
-    // ping to wake background if needed
-    chrome.runtime.sendMessage({ type: 'ping' }).catch(() => {});
+    if (!isContextValid()) { teardown(); return; }
+    try {
+      port = chrome.runtime.connect({ name: 'focuslens' });
+      port.onMessage.addListener(onMessage);
+      port.onDisconnect.addListener(() => {
+        if (!isContextValid()) { teardown(); return; }
+        setTimeout(connectPort, 2000);
+      });
+      chrome.runtime.sendMessage({ type: 'ping' }).catch(() => {});
+    } catch (e) {
+      if (!isContextValid()) teardown();
+      else setTimeout(connectPort, 2000);
+    }
   }
 
   connectPort();
@@ -488,27 +508,36 @@
   // ── Badge click — toggle gaze dot ───────────────────────────────────────────
 
   badge.addEventListener('click', () => {
+    if (!isContextValid()) return;
     settings.showGazeDot = !settings.showGazeDot;
     gazeDot.style.display = settings.showGazeDot ? 'block' : 'none';
-    chrome.storage.sync.set({ showGazeDot: settings.showGazeDot });
+    try { chrome.storage.sync.set({ showGazeDot: settings.showGazeDot }); } catch (_) {}
   });
 
   // ── Load initial settings ───────────────────────────────────────────────────
 
-  chrome.storage.sync.get(null, (stored) => {
-    if (stored && Object.keys(stored).length) {
-      Object.assign(settings, stored);
-      applySettings();
-    }
-  });
+  if (isContextValid()) {
+    try {
+      chrome.storage.sync.get(null, (stored) => {
+        if (chrome.runtime.lastError) return;
+        if (stored && Object.keys(stored).length) {
+          Object.assign(settings, stored);
+          applySettings();
+        }
+      });
+    } catch (_) {}
+  }
 
   // ── Chrome storage change listener ──────────────────────────────────────────
 
-  chrome.storage.onChanged.addListener((changes) => {
-    for (const [key, { newValue }] of Object.entries(changes)) {
-      settings[key] = newValue;
-    }
-    applySettings();
-  });
+  try {
+    chrome.storage.onChanged.addListener((changes) => {
+      if (!isContextValid()) return;
+      for (const [key, { newValue }] of Object.entries(changes)) {
+        settings[key] = newValue;
+      }
+      applySettings();
+    });
+  } catch (_) {}
 
 })();
