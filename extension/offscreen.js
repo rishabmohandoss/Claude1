@@ -25,7 +25,7 @@
   // ── MediaPipe FaceMesh ───────────────────────────────────────────────────
 
   const faceMesh = new FaceMesh({
-    locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`
+    locateFile: (file) => chrome.runtime.getURL(`lib/${file}`)
   });
 
   faceMesh.setOptions({
