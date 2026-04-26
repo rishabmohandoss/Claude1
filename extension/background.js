@@ -1,10 +1,11 @@
 // background.js — service worker
-// Manages the offscreen document (camera + MediaPipe) and relays gaze data to active tab.
+// Manages the offscreen document (camera + MediaPipe) and relays gaze data
+// to the active tab's content script and to the dashboard page if open.
 
 const OFFSCREEN_URL = chrome.runtime.getURL('offscreen.html');
 
-// Ports keyed by tabId — content scripts connect on load
-const contentPorts = new Map();
+const contentPorts = new Map(); // tabId → port
+let dashboardPort  = null;      // single dashboard page
 
 // ── Offscreen document lifecycle ────────────────────────────────────────────
 
@@ -22,7 +23,8 @@ async function ensureOffscreen() {
 chrome.runtime.onInstalled.addListener(ensureOffscreen);
 chrome.runtime.onStartup.addListener(ensureOffscreen);
 
-// Re-create offscreen doc if service worker restarts and loses state
+// ── Message listener ─────────────────────────────────────────────────────────
+
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === 'ping') {
     ensureOffscreen();
@@ -30,45 +32,52 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
 
-  // Forward gaze data from offscreen → active tab's content script
   if (msg.type === 'gazeUpdate') {
+    // → active tab content script
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-      const tabId = tabs[0]?.id;
-      if (!tabId) return;
-      const port = contentPorts.get(tabId);
-      if (port) {
-        try { port.postMessage(msg); } catch (_) {}
-      }
+      const port = contentPorts.get(tabs[0]?.id);
+      if (port) try { port.postMessage(msg); } catch (_) {}
     });
+    // → dashboard (always, regardless of active tab)
+    if (dashboardPort) try { dashboardPort.postMessage(msg); } catch (_) {}
   }
 
-  // Forward settings changes to active tab
   if (msg.type === 'settingsUpdate') {
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-      const tabId = tabs[0]?.id;
-      const port = contentPorts.get(tabId);
-      if (port) {
-        try { port.postMessage(msg); } catch (_) {}
-      }
+      const port = contentPorts.get(tabs[0]?.id);
+      if (port) try { port.postMessage(msg); } catch (_) {}
     });
+    if (dashboardPort) try { dashboardPort.postMessage(msg); } catch (_) {}
+  }
+
+  if (msg.type === 'openDashboard') {
+    chrome.tabs.create({ url: chrome.runtime.getURL('dashboard.html') });
   }
 });
 
-// ── Content script port connections ─────────────────────────────────────────
+// ── Port connections ─────────────────────────────────────────────────────────
 
 chrome.runtime.onConnect.addListener((port) => {
-  if (port.name !== 'focuslens') return;
-  const tabId = port.sender?.tab?.id;
-  if (!tabId) return;
+  // Dashboard page
+  if (port.name === 'focuslens-dashboard') {
+    dashboardPort = port;
+    port.onDisconnect.addListener(() => { dashboardPort = null; });
+    chrome.storage.sync.get(null, (s) => {
+      try { port.postMessage({ type: 'settingsUpdate', settings: s }); } catch (_) {}
+    });
+    ensureOffscreen();
+    return;
+  }
 
-  contentPorts.set(tabId, port);
-  port.onDisconnect.addListener(() => contentPorts.delete(tabId));
-
-  // Tell the new content script its current settings
-  chrome.storage.sync.get(null, (settings) => {
-    try { port.postMessage({ type: 'settingsUpdate', settings }); } catch (_) {}
-  });
-
-  // Ensure offscreen is running
-  ensureOffscreen();
+  // Content scripts
+  if (port.name === 'focuslens') {
+    const tabId = port.sender?.tab?.id;
+    if (!tabId) return;
+    contentPorts.set(tabId, port);
+    port.onDisconnect.addListener(() => contentPorts.delete(tabId));
+    chrome.storage.sync.get(null, (s) => {
+      try { port.postMessage({ type: 'settingsUpdate', settings: s }); } catch (_) {}
+    });
+    ensureOffscreen();
+  }
 });

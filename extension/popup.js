@@ -1,5 +1,10 @@
 // popup.js — reads/writes chrome.storage.sync, updates UI
 
+document.getElementById('open-dashboard').addEventListener('click', () => {
+  chrome.runtime.sendMessage({ type: 'openDashboard' });
+  window.close();
+});
+
 const DEFAULTS = {
   preset:      'general',
   showSphere:  true,
