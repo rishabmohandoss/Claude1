@@ -1,0 +1,1169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>FocusLens — Study Focus Assistant</title>
+
+<!-- Dependencies -->
+<script src="https://webgazer.cs.brown.edu/webgazer.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+<style>
+  /* ── Reset & Base ── */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:        #0d1117;
+    --surface:   #161b22;
+    --border:    #30363d;
+    --text:      #e6edf3;
+    --muted:     #8b949e;
+    --accent:    #58a6ff;
+    --accent2:   #bc8cff;
+    --green:     #3fb950;
+    --amber:     #d29922;
+    --red:       #f85149;
+    --radius:    12px;
+  }
+
+  html, body {
+    height: 100%;
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    overflow: hidden;
+  }
+
+  /* ── Layout ── */
+  #app {
+    display: grid;
+    grid-template-columns: 1fr 340px;
+    grid-template-rows: 56px 1fr;
+    height: 100vh;
+    gap: 0;
+  }
+
+  /* ── Top Bar ── */
+  #topbar {
+    grid-column: 1 / -1;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 24px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    z-index: 10;
+  }
+
+  .topbar-left { display: flex; align-items: center; gap: 12px; }
+
+  .logo {
+    display: flex; align-items: center; gap: 8px;
+    font-weight: 700; font-size: 16px; letter-spacing: -0.3px;
+  }
+
+  .logo-icon {
+    width: 28px; height: 28px; border-radius: 8px;
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    display: flex; align-items: center; justify-content: center;
+    font-size: 14px;
+  }
+
+  .session-badge {
+    display: flex; align-items: center; gap: 6px;
+    font-size: 12px; color: var(--muted);
+    background: rgba(63,185,80,0.1);
+    border: 1px solid rgba(63,185,80,0.3);
+    padding: 4px 10px; border-radius: 20px;
+  }
+
+  .session-dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--green);
+    animation: pulse-dot 2s infinite;
+  }
+
+  @keyframes pulse-dot {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.5; transform: scale(0.8); }
+  }
+
+  .topbar-right { display: flex; align-items: center; gap: 10px; }
+
+  .btn {
+    padding: 6px 14px; border-radius: 8px; border: 1px solid var(--border);
+    background: transparent; color: var(--text); font-size: 13px;
+    cursor: pointer; transition: all 0.2s;
+  }
+  .btn:hover { background: var(--border); }
+  .btn-primary {
+    background: var(--accent); border-color: var(--accent); color: #000; font-weight: 600;
+  }
+  .btn-primary:hover { opacity: 0.85; }
+
+  #focus-score-bar {
+    display: flex; align-items: center; gap: 8px; font-size: 13px;
+  }
+
+  #focus-label { color: var(--muted); }
+
+  #focus-track {
+    width: 120px; height: 6px; background: var(--border); border-radius: 3px; overflow: hidden;
+  }
+
+  #focus-fill {
+    height: 100%; width: 85%;
+    background: linear-gradient(90deg, var(--green), var(--accent));
+    border-radius: 3px;
+    transition: width 0.8s ease, background 0.8s ease;
+  }
+
+  #focus-pct { font-weight: 600; min-width: 32px; }
+
+  /* ── Study Page (Left) ── */
+  #study-page {
+    overflow-y: auto;
+    padding: 40px 52px;
+    position: relative;
+  }
+
+  .study-header {
+    margin-bottom: 32px;
+    padding-bottom: 24px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .subject-tag {
+    display: inline-block;
+    font-size: 11px; font-weight: 600; letter-spacing: 0.8px; text-transform: uppercase;
+    color: var(--accent); background: rgba(88,166,255,0.1);
+    border: 1px solid rgba(88,166,255,0.25);
+    padding: 3px 10px; border-radius: 20px; margin-bottom: 12px;
+  }
+
+  .study-title {
+    font-size: 28px; font-weight: 700; letter-spacing: -0.5px;
+    margin-bottom: 8px; line-height: 1.2;
+  }
+
+  .study-meta { font-size: 13px; color: var(--muted); }
+
+  .study-body { max-width: 680px; }
+
+  .study-body h2 {
+    font-size: 17px; font-weight: 600; margin: 28px 0 12px;
+    color: var(--accent2);
+  }
+
+  .study-body p {
+    font-size: 15px; line-height: 1.75; color: #c9d1d9; margin-bottom: 16px;
+  }
+
+  .study-body .highlight {
+    background: rgba(188,140,255,0.12);
+    border-left: 3px solid var(--accent2);
+    padding: 12px 16px; border-radius: 0 8px 8px 0; margin: 16px 0;
+  }
+
+  .study-body .highlight p { margin: 0; font-style: italic; }
+
+  .formula-box {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 16px 20px; margin: 16px 0;
+    font-family: 'Courier New', monospace; font-size: 14px;
+    color: var(--green);
+  }
+
+  .key-term { color: var(--accent); font-weight: 600; }
+
+  /* ── Right Panel ── */
+  #right-panel {
+    border-left: 1px solid var(--border);
+    background: var(--surface);
+    display: flex; flex-direction: column; gap: 0;
+    overflow-y: auto;
+  }
+
+  .panel-section {
+    padding: 16px 18px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .panel-section:last-child { border-bottom: none; }
+
+  .section-title {
+    font-size: 11px; font-weight: 600; letter-spacing: 0.8px;
+    text-transform: uppercase; color: var(--muted); margin-bottom: 12px;
+  }
+
+  /* Camera Feed */
+  #cam-container {
+    position: relative; border-radius: 10px; overflow: hidden;
+    background: #000; aspect-ratio: 4/3;
+    border: 1px solid var(--border);
+  }
+
+  #webgazerVideoFeed {
+    width: 100% !important; height: 100% !important;
+    object-fit: cover !important;
+    position: absolute !important; top: 0 !important; left: 0 !important;
+  }
+
+  #webgazerFaceOverlay, #webgazerFaceFeedbackBox {
+    position: absolute !important;
+  }
+
+  .cam-overlay {
+    position: absolute; inset: 0; pointer-events: none;
+    border-radius: 10px;
+  }
+
+  /* corner brackets */
+  .cam-overlay::before, .cam-overlay::after {
+    content: '';
+    position: absolute;
+    width: 16px; height: 16px;
+    border-color: var(--accent); border-style: solid;
+  }
+  .cam-overlay::before { top: 6px; left: 6px; border-width: 2px 0 0 2px; border-radius: 3px 0 0 0; }
+  .cam-overlay::after  { bottom: 6px; right: 6px; border-width: 0 2px 2px 0; border-radius: 0 0 3px 0; }
+
+  .cam-status {
+    position: absolute; bottom: 8px; left: 8px;
+    font-size: 10px; font-weight: 600; letter-spacing: 0.5px;
+    background: rgba(13,17,23,0.8); padding: 3px 8px; border-radius: 4px;
+    color: var(--green);
+  }
+
+  /* Signal Meters */
+  .signal-row {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 10px;
+  }
+
+  .signal-row:last-child { margin-bottom: 0; }
+
+  .signal-name { font-size: 12px; color: var(--muted); width: 90px; }
+
+  .signal-bar-wrap {
+    flex: 1; height: 5px; background: var(--border);
+    border-radius: 3px; overflow: hidden; margin: 0 10px;
+  }
+
+  .signal-bar {
+    height: 100%; border-radius: 3px;
+    transition: width 0.6s ease, background 0.6s ease;
+  }
+
+  .signal-val { font-size: 11px; font-weight: 600; width: 28px; text-align: right; }
+
+  /* Event Log */
+  #event-log {
+    display: flex; flex-direction: column; gap: 6px;
+    max-height: 140px; overflow-y: auto;
+  }
+
+  .log-entry {
+    display: flex; align-items: flex-start; gap: 8px;
+    font-size: 11px; padding: 6px 8px; border-radius: 6px;
+    background: rgba(255,255,255,0.03);
+    animation: log-in 0.3s ease;
+  }
+
+  @keyframes log-in {
+    from { opacity: 0; transform: translateX(-8px); }
+    to   { opacity: 1; transform: translateX(0); }
+  }
+
+  .log-dot {
+    width: 6px; height: 6px; border-radius: 50%; margin-top: 3px; flex-shrink: 0;
+  }
+  .log-dot.green  { background: var(--green); }
+  .log-dot.amber  { background: var(--amber); }
+  .log-dot.red    { background: var(--red); }
+  .log-dot.blue   { background: var(--accent); }
+
+  .log-time { color: var(--muted); font-size: 10px; flex-shrink: 0; }
+
+  /* Settings */
+  .preset-grid {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 14px;
+  }
+
+  .preset-btn {
+    padding: 8px 4px; border-radius: 8px; border: 1px solid var(--border);
+    background: transparent; color: var(--text); font-size: 11px; font-weight: 500;
+    cursor: pointer; text-align: center; transition: all 0.2s;
+    display: flex; flex-direction: column; align-items: center; gap: 4px;
+  }
+
+  .preset-btn .preset-icon { font-size: 16px; }
+  .preset-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .preset-btn.active {
+    border-color: var(--accent); background: rgba(88,166,255,0.1); color: var(--accent);
+  }
+
+  .setting-row {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 10px; font-size: 12px;
+  }
+
+  .setting-label { color: var(--muted); }
+
+  .toggle {
+    width: 32px; height: 18px; border-radius: 9px;
+    background: var(--border); position: relative; cursor: pointer;
+    transition: background 0.2s;
+  }
+  .toggle.on { background: var(--accent); }
+  .toggle::after {
+    content: ''; position: absolute;
+    width: 12px; height: 12px; border-radius: 50%;
+    background: #fff; top: 3px; left: 3px;
+    transition: left 0.2s;
+  }
+  .toggle.on::after { left: 17px; }
+
+  input[type=range] {
+    width: 80px; accent-color: var(--accent); cursor: pointer;
+  }
+
+  /* ── Gaze Dot ── */
+  #gaze-dot {
+    position: fixed; width: 14px; height: 14px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(88,166,255,0.9) 0%, rgba(88,166,255,0.2) 70%);
+    border: 1px solid rgba(88,166,255,0.6);
+    pointer-events: none; z-index: 9000;
+    transform: translate(-50%, -50%);
+    transition: left 0.08s linear, top 0.08s linear;
+    display: none;
+  }
+
+  /* ── Sphere Overlay ── */
+  #sphere-container {
+    position: fixed;
+    pointer-events: none;
+    z-index: 9999;
+    opacity: 0;
+    transition: opacity 0.6s ease;
+  }
+
+  #sphere-container.visible { opacity: 1; }
+
+  #sphere-canvas { display: block; }
+
+  .sphere-label {
+    text-align: center;
+    font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase;
+    color: rgba(88,166,255,0.7);
+    margin-top: 4px;
+    font-weight: 600;
+  }
+
+  /* ── Distraction Banner ── */
+  #distraction-banner {
+    position: fixed; top: 64px; left: 50%; transform: translateX(-50%);
+    background: rgba(22,27,34,0.95);
+    border: 1px solid var(--amber);
+    border-radius: 10px; padding: 10px 20px;
+    font-size: 13px; color: var(--amber);
+    display: flex; align-items: center; gap: 8px;
+    z-index: 9998; opacity: 0;
+    transition: opacity 0.4s ease;
+    backdrop-filter: blur(10px);
+    box-shadow: 0 4px 24px rgba(0,0,0,0.4), 0 0 20px rgba(210,153,34,0.15);
+  }
+
+  #distraction-banner.visible { opacity: 1; }
+
+  /* ── Settings Drawer ── */
+  #settings-drawer {
+    position: fixed; top: 0; right: -360px; width: 340px; height: 100vh;
+    background: var(--surface);
+    border-left: 1px solid var(--border);
+    z-index: 10000;
+    transition: right 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    overflow-y: auto;
+    padding: 24px 20px;
+  }
+
+  #settings-drawer.open { right: 0; }
+
+  .drawer-header {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 24px;
+  }
+
+  .drawer-title { font-size: 16px; font-weight: 700; }
+
+  .close-btn {
+    width: 28px; height: 28px; border-radius: 6px;
+    background: var(--border); border: none; color: var(--text);
+    font-size: 16px; cursor: pointer; display: flex; align-items: center; justify-content: center;
+  }
+
+  .drawer-section { margin-bottom: 24px; }
+  .drawer-section-title {
+    font-size: 11px; font-weight: 600; letter-spacing: 0.8px;
+    text-transform: uppercase; color: var(--muted); margin-bottom: 12px;
+  }
+
+  .drawer-setting-row {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 10px 0; border-bottom: 1px solid rgba(48,54,61,0.5);
+    font-size: 13px;
+  }
+
+  .drawer-setting-row:last-child { border-bottom: none; }
+
+  .drawer-label { font-size: 13px; }
+  .drawer-sublabel { font-size: 11px; color: var(--muted); margin-top: 2px; }
+
+  select {
+    background: var(--bg); border: 1px solid var(--border);
+    color: var(--text); padding: 4px 8px; border-radius: 6px; font-size: 12px;
+    cursor: pointer;
+  }
+
+  /* ── WebGazer Override ── */
+  #webgazerGazeDot { display: none !important; }
+
+  /* ── Scrollbar ── */
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+</style>
+</head>
+<body>
+
+<div id="app">
+
+  <!-- Top Bar -->
+  <header id="topbar">
+    <div class="topbar-left">
+      <div class="logo">
+        <div class="logo-icon">🔭</div>
+        FocusLens
+      </div>
+      <div class="session-badge">
+        <div class="session-dot"></div>
+        <span id="session-timer">00:00</span>
+      </div>
+    </div>
+
+    <div id="focus-score-bar">
+      <span id="focus-label">Focus</span>
+      <div id="focus-track"><div id="focus-fill"></div></div>
+      <span id="focus-pct">85%</span>
+    </div>
+
+    <div class="topbar-right">
+      <button class="btn" onclick="toggleSettings()">⚙ Settings</button>
+      <button class="btn btn-primary" id="start-btn" onclick="startSession()">Start Tracking</button>
+    </div>
+  </header>
+
+  <!-- Study Page -->
+  <main id="study-page">
+    <div class="study-header">
+      <div class="subject-tag">Cognitive Science · Chapter 4</div>
+      <h1 class="study-title">Attention, Memory & the<br>Learning Process</h1>
+      <div class="study-meta">Est. reading time: 18 min &nbsp;·&nbsp; Last studied: 2 days ago</div>
+    </div>
+
+    <div class="study-body">
+
+      <h2>4.1 — What is Selective Attention?</h2>
+      <p>
+        <span class="key-term">Selective attention</span> is the cognitive process by which the brain prioritizes
+        certain stimuli from the environment while filtering out irrelevant information. This mechanism
+        is crucial for effective learning, as it determines which information makes it into
+        <span class="key-term">working memory</span>.
+      </p>
+
+      <div class="highlight">
+        <p>"We don't see things as they are; we see them as we are. The brain constructs reality
+        from a flood of sensory input, choosing what matters most at any given moment."</p>
+      </div>
+
+      <p>
+        The <span class="key-term">attentional spotlight</span> metaphor suggests that our focus operates
+        like a beam of light — where the light shines, processing is enhanced; elsewhere, it is
+        suppressed. Research using eye-tracking has confirmed that where the eyes go, attention follows.
+      </p>
+
+      <h2>4.2 — The Cognitive Load Model</h2>
+      <p>
+        Proposed by John Sweller in 1988, <span class="key-term">Cognitive Load Theory</span> argues
+        that working memory has a strictly limited capacity. When this capacity is exceeded — through
+        complex material, distractions, or emotional stress — learning degrades significantly.
+      </p>
+
+      <div class="formula-box">
+        Total Load = Intrinsic Load + Extraneous Load + Germane Load
+      </div>
+
+      <p>
+        Intrinsic load arises from the complexity of the material itself. Extraneous load comes
+        from poorly designed instruction or distracting environments. Germane load is the productive
+        effort devoted to forming <span class="key-term">schemas</span> — the building blocks of
+        long-term memory.
+      </p>
+
+      <h2>4.3 — Focus & Neurodiversity</h2>
+      <p>
+        Students with <span class="key-term">ADHD</span> often experience fluctuating attentional states,
+        making sustained focus particularly challenging. Research indicates that
+        <span class="key-term">environmental cues</span> — visual anchors, rhythmic stimuli, or
+        gentle movement — can act as focus regulators, especially during independent study.
+      </p>
+      <p>
+        For students on the <span class="key-term">autism spectrum</span>, hyperfocus episodes may
+        alternate with sudden disengagement. Predictable, low-intensity sensory feedback is often
+        more effective than abrupt interruptions.
+      </p>
+
+      <div class="highlight">
+        <p>Gentle, non-intrusive cues respect the learner's cognitive autonomy while quietly
+        redirecting attention before a full distraction cascade begins.</p>
+      </div>
+
+      <h2>4.4 — Memory Consolidation</h2>
+      <p>
+        Information moves from working memory to <span class="key-term">long-term memory</span>
+        through a process called <span class="key-term">consolidation</span>, which is heavily
+        dependent on focus quality during encoding. Distributed practice (spaced repetition) and
+        active recall consistently outperform passive re-reading.
+      </p>
+      <p>
+        The <span class="key-term">spacing effect</span> demonstrates that learning sessions spread
+        over time produce stronger retention than a single massed session — a core principle behind
+        modern flashcard systems like Anki.
+      </p>
+
+    </div>
+  </main>
+
+  <!-- Right Panel -->
+  <aside id="right-panel">
+
+    <!-- Camera -->
+    <div class="panel-section">
+      <div class="section-title">Eye Tracking</div>
+      <div id="cam-container">
+        <div class="cam-overlay"></div>
+        <div class="cam-status" id="cam-status">● INITIALIZING</div>
+      </div>
+    </div>
+
+    <!-- Signal Meters -->
+    <div class="panel-section">
+      <div class="section-title">Live Signals</div>
+
+      <div class="signal-row">
+        <span class="signal-name">Gaze Drift</span>
+        <div class="signal-bar-wrap"><div class="signal-bar" id="bar-gds" style="width:20%;background:var(--green)"></div></div>
+        <span class="signal-val" id="val-gds">20</span>
+      </div>
+      <div class="signal-row">
+        <span class="signal-name">Off-Screen</span>
+        <div class="signal-bar-wrap"><div class="signal-bar" id="bar-osr" style="width:10%;background:var(--green)"></div></div>
+        <span class="signal-val" id="val-osr">10</span>
+      </div>
+      <div class="signal-row">
+        <span class="signal-name">Head Pose</span>
+        <div class="signal-bar-wrap"><div class="signal-bar" id="bar-hpd" style="width:15%;background:var(--green)"></div></div>
+        <span class="signal-val" id="val-hpd">15</span>
+      </div>
+      <div class="signal-row">
+        <span class="signal-name">Blink Rate</span>
+        <div class="signal-bar-wrap"><div class="signal-bar" id="bar-bra" style="width:30%;background:var(--accent)"></div></div>
+        <span class="signal-val" id="val-bra">30</span>
+      </div>
+      <div class="signal-row">
+        <span class="signal-name">Focus Score</span>
+        <div class="signal-bar-wrap"><div class="signal-bar" id="bar-ces" style="width:85%;background:var(--green)"></div></div>
+        <span class="signal-val" id="val-ces">85</span>
+      </div>
+    </div>
+
+    <!-- Event Log -->
+    <div class="panel-section">
+      <div class="section-title">Event Log</div>
+      <div id="event-log">
+        <div class="log-entry">
+          <div class="log-dot green"></div>
+          <span class="log-time">00:00</span>
+          <span>Session started</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Quick Settings -->
+    <div class="panel-section">
+      <div class="section-title">Profile Preset</div>
+      <div class="preset-grid">
+        <button class="preset-btn active" id="preset-general" onclick="setPreset('general')">
+          <span class="preset-icon">📚</span>General
+        </button>
+        <button class="preset-btn" id="preset-adhd" onclick="setPreset('adhd')">
+          <span class="preset-icon">⚡</span>ADHD
+        </button>
+        <button class="preset-btn" id="preset-autism" onclick="setPreset('autism')">
+          <span class="preset-icon">🌀</span>Autism
+        </button>
+      </div>
+      <div class="setting-row">
+        <span class="setting-label">Sphere nudge</span>
+        <div class="toggle on" id="toggle-sphere" onclick="toggleOption('sphere')"></div>
+      </div>
+      <div class="setting-row">
+        <span class="setting-label">Banner alerts</span>
+        <div class="toggle on" id="toggle-banner" onclick="toggleOption('banner')"></div>
+      </div>
+      <div class="setting-row">
+        <span class="setting-label">Sensitivity</span>
+        <input type="range" id="sensitivity-slider" min="1" max="10" value="5"
+               oninput="setSensitivity(this.value)" />
+      </div>
+    </div>
+
+  </aside>
+</div>
+
+<!-- Gaze Dot -->
+<div id="gaze-dot"></div>
+
+<!-- Floating Sphere -->
+<div id="sphere-container">
+  <canvas id="sphere-canvas" width="120" height="120"></canvas>
+  <div class="sphere-label">REFOCUS</div>
+</div>
+
+<!-- Distraction Banner -->
+<div id="distraction-banner">
+  ⚠ Gaze drift detected — take a breath and refocus
+</div>
+
+<!-- Settings Drawer -->
+<div id="settings-drawer">
+  <div class="drawer-header">
+    <div class="drawer-title">⚙ FocusLens Settings</div>
+    <button class="close-btn" onclick="toggleSettings()">✕</button>
+  </div>
+
+  <div class="drawer-section">
+    <div class="drawer-section-title">Neurodivergence Preset</div>
+
+    <div class="drawer-setting-row">
+      <div>
+        <div class="drawer-label">General Study</div>
+        <div class="drawer-sublabel">Balanced thresholds, all interventions active</div>
+      </div>
+      <input type="radio" name="preset" value="general" checked />
+    </div>
+    <div class="drawer-setting-row">
+      <div>
+        <div class="drawer-label">ADHD Support</div>
+        <div class="drawer-sublabel">Higher sensitivity, faster nudges, shorter cooldowns</div>
+      </div>
+      <input type="radio" name="preset" value="adhd" />
+    </div>
+    <div class="drawer-setting-row">
+      <div>
+        <div class="drawer-label">Autism / Sensory-Sensitive</div>
+        <div class="drawer-sublabel">Slow animations, no sudden movement, muted colors</div>
+      </div>
+      <input type="radio" name="preset" value="autism" />
+    </div>
+  </div>
+
+  <div class="drawer-section">
+    <div class="drawer-section-title">Interventions</div>
+    <div class="drawer-setting-row">
+      <div>
+        <div class="drawer-label">Floating Sphere</div>
+        <div class="drawer-sublabel">Gentle 3D shape appears when focus drops</div>
+      </div>
+      <div class="toggle on" id="d-toggle-sphere"></div>
+    </div>
+    <div class="drawer-setting-row">
+      <div>
+        <div class="drawer-label">Banner Alert</div>
+        <div class="drawer-sublabel">Subtle top notification on gaze loss</div>
+      </div>
+      <div class="toggle on" id="d-toggle-banner"></div>
+    </div>
+    <div class="drawer-setting-row">
+      <div>
+        <div class="drawer-label">Screen Edge Pulse</div>
+        <div class="drawer-sublabel">Soft glow at screen edge (minimal distraction)</div>
+      </div>
+      <div class="toggle" id="d-toggle-pulse"></div>
+    </div>
+  </div>
+
+  <div class="drawer-section">
+    <div class="drawer-section-title">Detection</div>
+    <div class="drawer-setting-row">
+      <div>
+        <div class="drawer-label">Sensitivity</div>
+        <div class="drawer-sublabel">How quickly distraction is flagged</div>
+      </div>
+      <select>
+        <option>Low</option>
+        <option selected>Medium</option>
+        <option>High</option>
+      </select>
+    </div>
+    <div class="drawer-setting-row">
+      <div>
+        <div class="drawer-label">Cooldown</div>
+        <div class="drawer-sublabel">Min. time between nudges</div>
+      </div>
+      <select>
+        <option>10s</option>
+        <option selected>20s</option>
+        <option>30s</option>
+        <option>60s</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="drawer-section">
+    <div class="drawer-section-title">Sphere Style</div>
+    <div class="drawer-setting-row">
+      <div class="drawer-label">Shape</div>
+      <select id="sphere-shape" onchange="rebuildSphere()">
+        <option value="sphere">Sphere</option>
+        <option value="torus">Torus</option>
+        <option value="octahedron">Octahedron</option>
+        <option value="icosahedron">Icosahedron</option>
+      </select>
+    </div>
+    <div class="drawer-setting-row">
+      <div class="drawer-label">Position</div>
+      <select id="sphere-pos" onchange="updateSpherePosition()">
+        <option value="br">Bottom Right</option>
+        <option value="bl">Bottom Left</option>
+        <option value="tr">Top Right</option>
+        <option value="center">Center</option>
+      </select>
+    </div>
+    <div class="drawer-setting-row">
+      <div class="drawer-label">Color</div>
+      <select id="sphere-color" onchange="rebuildSphere()">
+        <option value="blue">Electric Blue</option>
+        <option value="purple">Violet</option>
+        <option value="green">Mint Green</option>
+        <option value="amber">Amber</option>
+      </select>
+    </div>
+  </div>
+</div>
+
+<script>
+// ─────────────────────────────────────────────
+// State
+// ─────────────────────────────────────────────
+const state = {
+  tracking: false,
+  sessionStart: null,
+  lastGaze: { x: window.innerWidth / 2, y: window.innerHeight / 2 },
+  gazeHistory: [],
+  focusScore: 85,
+  distractedSince: null,
+  lastIntervention: 0,
+  cooldown: 20000,
+  sensitivity: 5,
+  preset: 'general',
+  options: { sphere: true, banner: true, pulse: false },
+  signals: { gds: 20, osr: 10, hpd: 15, bra: 30, ces: 85 },
+};
+
+const PRESETS = {
+  general: { sensitivityMult: 1.0, cooldown: 20000, driftThreshold: 0.25,  offScreenTime: 3000 },
+  adhd:    { sensitivityMult: 1.4, cooldown: 10000, driftThreshold: 0.20,  offScreenTime: 2000 },
+  autism:  { sensitivityMult: 0.8, cooldown: 30000, driftThreshold: 0.30,  offScreenTime: 4000 },
+};
+
+// ─────────────────────────────────────────────
+// Three.js Sphere
+// ─────────────────────────────────────────────
+let sphereRenderer, sphereScene, sphereCamera, sphereMesh, sphereAnimId;
+
+const SPHERE_COLORS = {
+  blue:   { primary: 0x58a6ff, emissive: 0x1a3a6b, wire: 0x00d4ff },
+  purple: { primary: 0xbc8cff, emissive: 0x3a1a6b, wire: 0x9b6fd6 },
+  green:  { primary: 0x3fb950, emissive: 0x1a4a1a, wire: 0x00ff88 },
+  amber:  { primary: 0xd29922, emissive: 0x4a2a00, wire: 0xffb700 },
+};
+
+function buildSphere() {
+  const canvas = document.getElementById('sphere-canvas');
+  const colorKey = document.getElementById('sphere-color')?.value || 'blue';
+  const shapeKey  = document.getElementById('sphere-shape')?.value || 'sphere';
+  const colors = SPHERE_COLORS[colorKey];
+
+  if (sphereAnimId) cancelAnimationFrame(sphereAnimId);
+  if (sphereRenderer) sphereRenderer.dispose();
+
+  sphereScene    = new THREE.Scene();
+  sphereCamera   = new THREE.PerspectiveCamera(45, 1, 0.1, 100);
+  sphereCamera.position.z = 2.8;
+
+  sphereRenderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true });
+  sphereRenderer.setSize(120, 120);
+  sphereRenderer.setPixelRatio(window.devicePixelRatio);
+
+  // Geometry
+  let geo;
+  if      (shapeKey === 'torus')       geo = new THREE.TorusGeometry(0.7, 0.28, 24, 48);
+  else if (shapeKey === 'octahedron')  geo = new THREE.OctahedronGeometry(0.9, 1);
+  else if (shapeKey === 'icosahedron') geo = new THREE.IcosahedronGeometry(0.9, 1);
+  else                                 geo = new THREE.SphereGeometry(0.9, 32, 32);
+
+  // Solid mesh
+  const mat = new THREE.MeshPhongMaterial({
+    color: colors.primary,
+    emissive: colors.emissive,
+    shininess: 90,
+    transparent: true,
+    opacity: 0.85,
+  });
+  sphereMesh = new THREE.Mesh(geo, mat);
+  sphereScene.add(sphereMesh);
+
+  // Wireframe
+  const wireMat = new THREE.MeshBasicMaterial({
+    color: colors.wire, wireframe: true, transparent: true, opacity: 0.25,
+  });
+  const wireMesh = new THREE.Mesh(geo, wireMat);
+  wireMesh.scale.setScalar(1.01);
+  sphereScene.add(wireMesh);
+
+  // Lights
+  const amb = new THREE.AmbientLight(0xffffff, 0.4);
+  const pt  = new THREE.PointLight(colors.wire, 1.5, 10);
+  pt.position.set(2, 2, 2);
+  sphereScene.add(amb, pt);
+
+  function animate() {
+    sphereAnimId = requestAnimationFrame(animate);
+    const preset = state.preset;
+    const speed  = preset === 'adhd' ? 0.018 : preset === 'autism' ? 0.006 : 0.012;
+    sphereMesh.rotation.y += speed;
+    sphereMesh.rotation.x += speed * 0.4;
+    wireMesh.rotation.y    = sphereMesh.rotation.y;
+    wireMesh.rotation.x    = sphereMesh.rotation.x;
+    sphereRenderer.render(sphereScene, sphereCamera);
+  }
+  animate();
+}
+
+function updateSpherePosition() {
+  const container = document.getElementById('sphere-container');
+  const pos = document.getElementById('sphere-pos')?.value || 'br';
+  const margin = 32;
+  container.style.bottom = ''; container.style.top = '';
+  container.style.left   = ''; container.style.right = '';
+
+  if (pos === 'br')     { container.style.bottom = margin+'px'; container.style.right  = margin+'px'; }
+  else if (pos === 'bl'){ container.style.bottom = margin+'px'; container.style.left   = margin+'px'; }
+  else if (pos === 'tr'){ container.style.top    = margin+'px'; container.style.right  = margin+'px'; }
+  else                  { container.style.top = '50%'; container.style.left = '50%';
+                          container.style.transform = 'translate(-50%,-50%)'; }
+}
+
+function rebuildSphere() { buildSphere(); }
+
+// ─────────────────────────────────────────────
+// Interventions
+// ─────────────────────────────────────────────
+function showSphere() {
+  if (!state.options.sphere) return;
+  document.getElementById('sphere-container').classList.add('visible');
+  setTimeout(() => document.getElementById('sphere-container').classList.remove('visible'), 6000);
+}
+
+function showBanner(msg) {
+  if (!state.options.banner) return;
+  const b = document.getElementById('distraction-banner');
+  b.textContent = msg || '⚠ Gaze drift detected — take a breath and refocus';
+  b.classList.add('visible');
+  setTimeout(() => b.classList.remove('visible'), 4000);
+}
+
+function triggerIntervention(reason) {
+  const now = Date.now();
+  const p = PRESETS[state.preset];
+  if (now - state.lastIntervention < p.cooldown) return;
+  state.lastIntervention = now;
+
+  showSphere();
+  showBanner('⚠ ' + reason);
+  addLog(reason, 'amber');
+  updateFocusScore(Math.max(0, state.focusScore - 15));
+}
+
+// ─────────────────────────────────────────────
+// Gaze + WebGazer
+// ─────────────────────────────────────────────
+let gazeOffScreenStart = null;
+
+function startSession() {
+  if (state.tracking) return;
+  state.tracking    = true;
+  state.sessionStart = Date.now();
+
+  document.getElementById('start-btn').textContent = 'Tracking…';
+  document.getElementById('start-btn').disabled = true;
+  document.getElementById('cam-status').textContent = '● CALIBRATING';
+  document.getElementById('gaze-dot').style.display = 'block';
+
+  addLog('Eye tracking started', 'green');
+
+  webgazer
+    .setGazeListener((data) => {
+      if (!data) return;
+      const dot = document.getElementById('gaze-dot');
+      dot.style.left = data.x + 'px';
+      dot.style.top  = data.y + 'px';
+
+      state.lastGaze = { x: data.x, y: data.y };
+      state.gazeHistory.push({ x: data.x, y: data.y, t: Date.now() });
+      if (state.gazeHistory.length > 90) state.gazeHistory.shift();
+
+      analyzeGaze(data.x, data.y);
+    })
+    .begin()
+    .then(() => {
+      document.getElementById('cam-status').textContent = '● TRACKING';
+      addLog('Calibration complete', 'blue');
+      startSignalLoop();
+      startTimer();
+    })
+    .catch(() => {
+      document.getElementById('cam-status').textContent = '● SIM MODE';
+      addLog('Running in simulation mode', 'amber');
+      startSimulation();
+      startSignalLoop();
+      startTimer();
+    });
+
+  webgazer.showPredictionPoints(false);
+  webgazer.showVideo(true);
+  webgazer.showFaceOverlay(true);
+  webgazer.showFaceFeedbackBox(false);
+}
+
+function analyzeGaze(x, y) {
+  const p = PRESETS[state.preset];
+  const vw = window.innerWidth, vh = window.innerHeight;
+
+  // Off-screen check (outside center 70%)
+  const cx = vw * 0.15, cy = vh * 0.15, cw = vw * 0.70, ch = vh * 0.70;
+  const offScreen = x < cx || x > cx + cw || y < cy || y > cy + ch;
+
+  if (offScreen) {
+    if (!gazeOffScreenStart) gazeOffScreenStart = Date.now();
+    else if (Date.now() - gazeOffScreenStart > p.offScreenTime) {
+      gazeOffScreenStart = null;
+      triggerIntervention('Focus lost — eyes off screen');
+    }
+  } else {
+    gazeOffScreenStart = null;
+  }
+
+  // Drift check
+  if (state.gazeHistory.length >= 30) {
+    const recent = state.gazeHistory.slice(-30);
+    const xs = recent.map(g => g.x), ys = recent.map(g => g.y);
+    const stdX = stddev(xs), stdY = stddev(ys);
+    const drift = Math.sqrt(stdX**2 + stdY**2) / Math.sqrt(vw**2 + vh**2);
+    const threshold = p.driftThreshold / (state.sensitivity / 5);
+
+    if (drift > threshold) triggerIntervention('Gaze drift detected — try to stay focused');
+  }
+}
+
+function stddev(arr) {
+  const m = arr.reduce((a, b) => a + b, 0) / arr.length;
+  return Math.sqrt(arr.reduce((sq, n) => sq + (n - m) ** 2, 0) / arr.length);
+}
+
+// ─────────────────────────────────────────────
+// Simulation (fallback if no camera)
+// ─────────────────────────────────────────────
+function startSimulation() {
+  let simX = window.innerWidth * 0.5, simY = window.innerHeight * 0.4;
+  let vx = 2, vy = 1.5;
+  let distractTimer = 0;
+
+  setInterval(() => {
+    const vw = window.innerWidth, vh = window.innerHeight;
+
+    // Occasional distraction drift
+    distractTimer++;
+    if (distractTimer > 200 && Math.random() < 0.01) {
+      simX += (Math.random() - 0.5) * 400;
+      simY += (Math.random() - 0.5) * 300;
+      distractTimer = 0;
+    }
+
+    simX += vx + (Math.random() - 0.5) * 3;
+    simY += vy + (Math.random() - 0.5) * 3;
+
+    if (simX < 100 || simX > vw - 100) vx *= -1;
+    if (simY < 80  || simY > vh - 80)  vy *= -1;
+
+    simX = Math.max(20, Math.min(vw - 20, simX));
+    simY = Math.max(20, Math.min(vh - 20, simY));
+
+    const dot = document.getElementById('gaze-dot');
+    dot.style.left = simX + 'px';
+    dot.style.top  = simY + 'px';
+
+    state.lastGaze = { x: simX, y: simY };
+    state.gazeHistory.push({ x: simX, y: simY, t: Date.now() });
+    if (state.gazeHistory.length > 90) state.gazeHistory.shift();
+
+    analyzeGaze(simX, simY);
+  }, 50);
+}
+
+// ─────────────────────────────────────────────
+// Signal Loop (animates meters)
+// ─────────────────────────────────────────────
+function startSignalLoop() {
+  setInterval(() => {
+    const p = PRESETS[state.preset];
+
+    // Drift from gaze history
+    if (state.gazeHistory.length >= 10) {
+      const recent = state.gazeHistory.slice(-30);
+      const xs = recent.map(g => g.x), ys = recent.map(g => g.y);
+      const drift = Math.sqrt(stddev(xs)**2 + stddev(ys)**2);
+      state.signals.gds = Math.min(100, Math.round(drift / 4));
+    }
+
+    // Gentle jitter for other signals
+    ['osr','hpd','bra'].forEach(k => {
+      state.signals[k] = Math.max(5, Math.min(80,
+        state.signals[k] + (Math.random() - 0.5) * 6
+      ));
+    });
+
+    // CES
+    const { gds, osr, hpd, bra } = state.signals;
+    state.signals.ces = Math.max(0, Math.min(100,
+      Math.round(100 - gds * 0.35 - osr * 0.25 - hpd * 0.2 - bra * 0.1)
+    ));
+
+    updateSignalUI();
+    updateFocusScore(state.signals.ces);
+  }, 500);
+}
+
+function updateSignalUI() {
+  const s = state.signals;
+  const keys = { gds:'GDS', osr:'OSR', hpd:'HPD', bra:'BRA', ces:'CES' };
+
+  Object.entries(s).forEach(([k, v]) => {
+    const bar = document.getElementById('bar-' + k);
+    const val = document.getElementById('val-' + k);
+    if (!bar || !val) return;
+    bar.style.width = v + '%';
+    bar.style.background = v > 70 ? 'var(--red)' : v > 45 ? 'var(--amber)' : 'var(--green)';
+    if (k === 'ces') {
+      bar.style.background = v > 65 ? 'var(--green)' : v > 40 ? 'var(--amber)' : 'var(--red)';
+    }
+    val.textContent = Math.round(v);
+  });
+}
+
+// ─────────────────────────────────────────────
+// UI Helpers
+// ─────────────────────────────────────────────
+function updateFocusScore(score) {
+  state.focusScore = score;
+  const fill = document.getElementById('focus-fill');
+  const pct  = document.getElementById('focus-pct');
+  fill.style.width = score + '%';
+  fill.style.background = score > 65
+    ? 'linear-gradient(90deg, var(--green), var(--accent))'
+    : score > 40
+    ? 'linear-gradient(90deg, var(--amber), #e8a800)'
+    : 'linear-gradient(90deg, var(--red), #c0392b)';
+  pct.textContent = Math.round(score) + '%';
+}
+
+function addLog(msg, type) {
+  const log = document.getElementById('event-log');
+  const entry = document.createElement('div');
+  entry.className = 'log-entry';
+  entry.innerHTML = `
+    <div class="log-dot ${type}"></div>
+    <span class="log-time">${getElapsed()}</span>
+    <span>${msg}</span>
+  `;
+  log.prepend(entry);
+  while (log.children.length > 20) log.removeChild(log.lastChild);
+}
+
+function getElapsed() {
+  if (!state.sessionStart) return '00:00';
+  const s = Math.floor((Date.now() - state.sessionStart) / 1000);
+  return String(Math.floor(s / 60)).padStart(2,'0') + ':' + String(s % 60).padStart(2,'0');
+}
+
+function startTimer() {
+  setInterval(() => {
+    document.getElementById('session-timer').textContent = getElapsed();
+  }, 1000);
+}
+
+// ─────────────────────────────────────────────
+// Settings & Presets
+// ─────────────────────────────────────────────
+function toggleSettings() {
+  document.getElementById('settings-drawer').classList.toggle('open');
+}
+
+function setPreset(p) {
+  state.preset = p;
+  document.querySelectorAll('.preset-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('preset-' + p)?.classList.add('active');
+  document.querySelectorAll('input[name=preset]').forEach(r => { r.checked = r.value === p; });
+  state.cooldown = PRESETS[p].cooldown;
+
+  const labels = { general:'General Study', adhd:'ADHD Support', autism:'Autism/Sensory' };
+  addLog('Profile: ' + labels[p], 'blue');
+  rebuildSphere();
+}
+
+function toggleOption(key) {
+  state.options[key] = !state.options[key];
+  document.getElementById('toggle-' + key)?.classList.toggle('on', state.options[key]);
+}
+
+function setSensitivity(v) {
+  state.sensitivity = Number(v);
+}
+
+// ─────────────────────────────────────────────
+// Init
+// ─────────────────────────────────────────────
+buildSphere();
+updateSpherePosition();
+
+// Position sphere default bottom-right
+document.getElementById('sphere-container').style.bottom = '32px';
+document.getElementById('sphere-container').style.right  = '368px';
+</script>
+</body>
+</html>
