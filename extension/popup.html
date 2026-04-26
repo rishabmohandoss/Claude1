@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>FocusLens</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:      #0d1117;
+    --surface: #161b22;
+    --border:  #30363d;
+    --text:    #e6edf3;
+    --muted:   #8b949e;
+    --accent:  #58a6ff;
+    --green:   #3fb950;
+    --amber:   #d29922;
+    --red:     #f85149;
+  }
+
+  body {
+    width: 300px;
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    font-size: 13px;
+  }
+
+  /* Header */
+  .header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 16px 12px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+  }
+
+  .logo { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 15px; }
+  .logo-icon {
+    width: 26px; height: 26px; border-radius: 7px;
+    background: linear-gradient(135deg, #58a6ff, #bc8cff);
+    display: flex; align-items: center; justify-content: center; font-size: 13px;
+  }
+
+  .status-pill {
+    display: flex; align-items: center; gap: 5px;
+    font-size: 11px; color: var(--muted);
+    background: rgba(63,185,80,0.1);
+    border: 1px solid rgba(63,185,80,0.3);
+    padding: 3px 9px; border-radius: 20px;
+  }
+  .status-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--green); animation: blink 2s infinite; }
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.4} }
+
+  /* Sections */
+  .section { padding: 14px 16px; border-bottom: 1px solid var(--border); }
+  .section:last-child { border-bottom: none; }
+  .section-title {
+    font-size: 10px; font-weight: 600; letter-spacing: 0.8px;
+    text-transform: uppercase; color: var(--muted); margin-bottom: 10px;
+  }
+
+  /* Preset grid */
+  .preset-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px; }
+  .preset-btn {
+    display: flex; flex-direction: column; align-items: center; gap: 4px;
+    padding: 9px 4px; border-radius: 8px;
+    border: 1px solid var(--border); background: transparent;
+    color: var(--muted); font-size: 11px; font-weight: 500;
+    cursor: pointer; transition: all 0.2s;
+  }
+  .preset-btn .icon { font-size: 17px; }
+  .preset-btn:hover { border-color: var(--accent); color: var(--text); }
+  .preset-btn.active { border-color: var(--accent); background: rgba(88,166,255,0.1); color: var(--accent); }
+
+  /* Rows */
+  .row {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 7px 0; border-bottom: 1px solid rgba(48,54,61,0.5);
+  }
+  .row:last-child { border-bottom: none; }
+  .row-label { color: var(--text); font-size: 12px; }
+  .row-sub   { font-size: 10px; color: var(--muted); margin-top: 1px; }
+
+  /* Toggle */
+  .toggle {
+    width: 34px; height: 18px; border-radius: 9px;
+    background: var(--border); position: relative; cursor: pointer; transition: background 0.2s; flex-shrink: 0;
+  }
+  .toggle.on { background: var(--accent); }
+  .toggle::after {
+    content: ''; position: absolute;
+    width: 12px; height: 12px; border-radius: 50%;
+    background: #fff; top: 3px; left: 3px; transition: left 0.2s;
+  }
+  .toggle.on::after { left: 19px; }
+
+  /* Select */
+  select {
+    background: var(--surface); border: 1px solid var(--border);
+    color: var(--text); padding: 4px 8px; border-radius: 6px; font-size: 11px;
+    cursor: pointer; outline: none;
+  }
+
+  /* Range */
+  input[type=range] { width: 90px; accent-color: var(--accent); cursor: pointer; }
+
+  /* Focus score bar */
+  .score-wrap { margin-top: 10px; }
+  .score-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+  .score-label { font-size: 11px; color: var(--muted); width: 80px; }
+  .score-track { flex: 1; height: 5px; background: var(--border); border-radius: 3px; overflow: hidden; }
+  .score-fill  { height: 100%; border-radius: 3px; background: var(--green); transition: width 0.6s, background 0.6s; }
+  .score-val   { font-size: 11px; font-weight: 600; width: 26px; text-align: right; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="logo">
+    <div class="logo-icon">🔭</div>
+    FocusLens
+  </div>
+  <div class="status-pill">
+    <div class="status-dot" id="status-dot"></div>
+    <span id="status-text">Active</span>
+  </div>
+</div>
+
+<!-- Preset -->
+<div class="section">
+  <div class="section-title">Neurodivergence Preset</div>
+  <div class="preset-grid">
+    <button class="preset-btn" id="preset-general" data-preset="general">
+      <span class="icon">📚</span>General
+    </button>
+    <button class="preset-btn" id="preset-adhd" data-preset="adhd">
+      <span class="icon">⚡</span>ADHD
+    </button>
+    <button class="preset-btn" id="preset-autism" data-preset="autism">
+      <span class="icon">🌀</span>Autism
+    </button>
+  </div>
+</div>
+
+<!-- Interventions -->
+<div class="section">
+  <div class="section-title">Interventions</div>
+  <div class="row">
+    <div><div class="row-label">Floating Sphere</div><div class="row-sub">3D nudge when focus drops</div></div>
+    <div class="toggle on" id="toggle-sphere"></div>
+  </div>
+  <div class="row">
+    <div><div class="row-label">Banner Alert</div><div class="row-sub">Slide-in reminder at top</div></div>
+    <div class="toggle on" id="toggle-banner"></div>
+  </div>
+  <div class="row">
+    <div><div class="row-label">Edge Pulse</div><div class="row-sub">Screen border glow</div></div>
+    <div class="toggle" id="toggle-edge"></div>
+  </div>
+  <div class="row">
+    <div><div class="row-label">Gaze Dot</div><div class="row-sub">Live iris tracking dot</div></div>
+    <div class="toggle on" id="toggle-gaze"></div>
+  </div>
+</div>
+
+<!-- Detection -->
+<div class="section">
+  <div class="section-title">Detection</div>
+  <div class="row">
+    <div class="row-label">Sensitivity</div>
+    <input type="range" id="sensitivity" min="1" max="10" value="5" />
+  </div>
+  <div class="row">
+    <div class="row-label">Cooldown</div>
+    <select id="cooldown">
+      <option value="10">10 sec</option>
+      <option value="20" selected>20 sec</option>
+      <option value="30">30 sec</option>
+      <option value="60">1 min</option>
+    </select>
+  </div>
+  <div class="row">
+    <div class="row-label">Sphere position</div>
+    <select id="sphere-pos">
+      <option value="br">Bottom right</option>
+      <option value="bl">Bottom left</option>
+      <option value="tr">Top right</option>
+      <option value="center">Center</option>
+    </select>
+  </div>
+</div>
+
+<script src="popup.js"></script>
+</body>
+</html>
